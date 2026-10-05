@@ -1,0 +1,120 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Home page";
+}
+
+<div class="container">
+    <article>
+        <header>
+            <strong>Service Status</strong>
+        </header>
+        @foreach (var service in Model.ServiceStatuses)
+        {
+            <div data-service="@service.Key" style="display: flex; align-items: center; justify-content: space-between;">
+                <span>@service.Key</span>
+                <span class="status-badge" style="float: right; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; background: @(service.Value ? "rgba(46, 204, 113, 0.15)" : "rgba(231, 76, 60, 0.15)");">
+                    @(service.Value ? "Running" : "Stopped")
+                </span>
+            </div>
+        }
+    </article>
+    
+    <article>
+        <header>
+            <strong>Master Output</strong>
+        </header>
+
+        <label for="master-volume">
+            Volume <output id="master-vol-val">@Model.Volume%</output>
+        </label>
+        <input
+            type="range"
+            id="master-volume"
+            name="volume"
+            min="0"
+            max="100"
+            value="@Model.Volume"
+            oninput="document.getElementById('master-vol-val').value = this.value + '%'"
+            onchange="updateVolume()">
+
+        <fieldset>
+            <label for="mute-toggle">
+                <input type="checkbox" id="mute-toggle" name="isMuted" role="switch" @(Model.IsMuted ? "checked" : "") onchange="updateMuted()">
+                Mute Audio
+            </label>
+        </fieldset>
+    </article>
+</div>
+
+@section Scripts {
+    <script>
+        async function updateVolume() {
+            let volume = document.getElementById("master-volume").value;
+
+            try {
+                await fetch(`/api/audio/volume?value=${volume}`, {
+                    method: "POST"
+                });
+                fetchAudioState();
+            } catch (err) {
+                console.error("failed to update audio state", err);
+            }
+        }
+        
+        async function updateMuted() {
+            let isMuted = document.getElementById("mute-toggle").checked;
+            try {
+                await fetch(`/api/audio/mute?isMuted=${isMuted}`, {
+                    method: "POST"
+                });
+                fetchAudioState();
+            } catch (err) {
+                console.error("failed to update audio state", err);
+            }
+        }
+        
+        async function fetchAudioState() {
+            try {
+                let response = await fetch("/api/audio/volume");
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById("master-volume").value = data.volume;
+                    document.getElementById("master-vol-val").value = data.volume + "%";
+                }
+
+                response = await fetch("/api/audio/mute");
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById("mute-toggle").checked = data.isMuted;
+                }
+            } catch (err) {
+                console.error("failed to fetch audio status", err);
+            }
+        }
+        
+        window.addEventListener("DOMContentLoaded", () => {
+            setInterval(async () => {
+                const elements = document.querySelectorAll("[data-service]");
+
+                for (const el of elements) {
+                    const svc = el.getAttribute("data-service");
+                    const badge = el.querySelector('.status-badge');
+                    if (!badge) continue;
+
+                    try {
+                        let response = await fetch(`/api/system/status?service=${svc}`);
+                        if (!response.ok) continue;
+
+                        let data = await response.json();
+
+                        badge.textContent = data.isRunning ? "Running" : "Stopped";
+                        badge.style.background = data.isRunning ? "rgba(46, 204, 113, 0.15)" : "rgba(231, 76, 60, 0.15)";
+                    } catch (e) {
+                        console.error(`failed to fetch status for ${svc}`, e);
+                    }
+                }
+            }, 10000);
+        });
+    </script>
+}
